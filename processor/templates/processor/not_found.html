@@ -1,0 +1,13 @@
+{% extends "processor/base.html" %}
+{% block title %}Job Not Found{% endblock %}
+{% block content %}
+<div class="card" style="text-align:center; padding: 3rem;">
+  <div style="font-size: 4rem;">🔍</div>
+  <h2 style="margin: 1rem 0 0.5rem;">Job Not Found</h2>
+  <p style="color: var(--text-muted);">Job ID <code>{{ job_id }}</code> does not exist or has expired.</p>
+  <a href="{% url 'index' %}" class="btn btn-primary" style="margin-top: 1.5rem; display:inline-flex;">
+    <span class="btn-icon">+</span>
+    <span class="btn-label">Start a New Job</span>
+  </a>
+</div>
+{% endblock %}

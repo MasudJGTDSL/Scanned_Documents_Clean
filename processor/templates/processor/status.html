@@ -1,0 +1,218 @@
+{% extends "processor/base.html" %}
+{% block title %}Job Status — OCR Document Processor{% endblock %}
+
+{% block content %}
+<section class="hero hero-compact">
+  <h1 class="hero-title">Processing <span class="gradient-text">Job</span></h1>
+  <p class="hero-subtitle">Job ID: <code class="job-id-badge">{{ job_id }}</code></p>
+</section>
+
+<div class="card status-card" id="status-card">
+
+  <!-- Status Banner -->
+  <div class="status-banner" id="status-banner">
+    <span class="status-dot" id="status-dot"></span>
+    <span class="status-label" id="status-label">Initialising…</span>
+  </div>
+
+  <!-- Progress Section -->
+  <div class="progress-section" id="progress-section">
+    <div class="progress-meta">
+      <span id="progress-text">Waiting to start…</span>
+      <span id="progress-count">0 / 0</span>
+    </div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progress-bar" style="width:0%"></div>
+    </div>
+    <div class="current-file-label" id="current-file"></div>
+  </div>
+
+  <!-- Results Table (shown when done) -->
+  <div id="results-section" class="results-section hidden">
+    <div class="results-header">
+      <h3>📋 Processed Files</h3>
+      <div id="output-folder-label" class="output-folder"></div>
+    </div>
+    <div class="table-wrapper">
+      <table class="results-table" id="results-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>File</th>
+            <th>Status</th>
+            <th>PDF</th>
+            <th>TXT</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Error Section -->
+  <div id="error-section" class="error-section hidden">
+    <div class="error-icon">⚠️</div>
+    <div class="error-message" id="error-message"></div>
+  </div>
+
+  <!-- Actions -->
+  <div class="form-actions status-actions">
+    <!-- Open Folder button — revealed by JS when job is done -->
+    <button id="btn-open-folder" class="btn btn-open-folder hidden"
+            onclick="openOutputFolder()" type="button">
+      <span class="btn-icon">📂</span>
+      <span class="btn-label">Open Output Folder</span>
+      <span class="btn-spinner hidden" id="open-spinner">
+        <svg class="spin" viewBox="0 0 24 24" width="16" height="16" fill="none"
+             stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.3"/>
+          <path d="M12 2a10 10 0 0 1 10 10"/>
+        </svg>
+      </span>
+    </button>
+    <a href="{% url 'index' %}" class="btn btn-secondary" id="btn-new-job">
+      <span class="btn-icon">+</span>
+      <span class="btn-label">New Job</span>
+    </a>
+  </div>
+  <!-- Inline feedback for the open-folder action -->
+  <div id="open-folder-feedback" class="open-folder-feedback hidden"></div>
+</div>
+
+<script>
+  const JOB_ID = "{{ job_id }}";
+  const API_URL = `/api/job/${JOB_ID}/`;
+  let pollInterval = null;
+
+  const dot    = document.getElementById('status-dot');
+  const label  = document.getElementById('status-label');
+  const ptext  = document.getElementById('progress-text');
+  const pcount = document.getElementById('progress-count');
+  const pbar   = document.getElementById('progress-bar');
+  const cfile  = document.getElementById('current-file');
+  const resSection  = document.getElementById('results-section');
+  const errSection  = document.getElementById('error-section');
+  const errMsg      = document.getElementById('error-message');
+  const resBody     = document.getElementById('results-body');
+  const outLabel    = document.getElementById('output-folder-label');
+
+  function setStatus(status) {
+    dot.className = 'status-dot status-' + status;
+    const labels = {
+      starting: 'Starting up…',
+      running:  'Processing images…',
+      done:     'Completed ✓',
+      error:    'Error',
+    };
+    label.textContent = labels[status] || status;
+  }
+
+  function renderResults(results, outputFolder) {
+    outLabel.textContent = '📂 Output: ' + outputFolder;
+    resBody.innerHTML = '';
+    results.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      tr.className = r.status === 'ok' ? 'row-ok' : 'row-error';
+      const pdfName = r.pdf ? r.pdf.split('\\').pop().split('/').pop() : '—';
+      const txtName = r.txt ? r.txt.split('\\').pop().split('/').pop() : '—';
+      tr.innerHTML = `
+        <td class="col-num">${i + 1}</td>
+        <td class="col-file">${r.file}</td>
+        <td class="col-status"><span class="badge badge-${r.status}">${r.status === 'ok' ? '✓ OK' : '✗ Error'}</span></td>
+        <td class="col-path">${r.pdf ? `<span class="path-chip">${pdfName}</span>` : '—'}</td>
+        <td class="col-path">${r.txt ? `<span class="path-chip">${txtName}</span>` : '—'}</td>
+      `;
+      if (r.status === 'error' && r.error) {
+        const errRow = document.createElement('tr');
+        errRow.className = 'row-error-detail';
+        errRow.innerHTML = `<td colspan="5" class="err-detail">↳ ${r.error}</td>`;
+        resBody.appendChild(tr);
+        resBody.appendChild(errRow);
+        return;
+      }
+      resBody.appendChild(tr);
+    });
+    resSection.classList.remove('hidden');
+  }
+
+  async function poll() {
+    try {
+      const resp = await fetch(API_URL);
+      const data = await resp.json();
+
+      setStatus(data.status);
+
+      if (data.total > 0) {
+        const pct = Math.round((data.current / data.total) * 100);
+        pbar.style.width = pct + '%';
+        pcount.textContent = `${data.current} / ${data.total}`;
+        ptext.textContent = data.current > 0 ? `Processed ${data.current} of ${data.total} images` : 'Processing…';
+        if (data.current_file) {
+          cfile.textContent = '→ ' + data.current_file;
+        }
+      }
+
+      if (data.status === 'done') {
+        clearInterval(pollInterval);
+        pbar.style.width = '100%';
+        pcount.textContent = `${data.total} / ${data.total}`;
+        ptext.textContent = `All ${data.total} image(s) processed.`;
+        cfile.textContent = '';
+        renderResults(data.results, data.output_folder);
+        // Reveal the Open Folder button
+        document.getElementById('btn-open-folder').classList.remove('hidden');
+      }
+
+      if (data.status === 'error') {
+        clearInterval(pollInterval);
+        errMsg.textContent = data.error || 'An unknown error occurred.';
+        errSection.classList.remove('hidden');
+      }
+    } catch (e) {
+      console.error('Poll error:', e);
+    }
+  }
+
+  // Initial poll + start interval
+  poll();
+  pollInterval = setInterval(poll, 1500);
+
+  // Open the output folder via the server-side explorer call
+  async function openOutputFolder() {
+    const btn     = document.getElementById('btn-open-folder');
+    const spinner = document.getElementById('open-spinner');
+    const feedback = document.getElementById('open-folder-feedback');
+
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    feedback.className = 'open-folder-feedback hidden';
+
+    try {
+      const csrfToken = document.cookie.split('; ')
+        .find(row => row.startsWith('csrftoken='))
+        ?.split('=')[1] || '';
+
+      const resp = await fetch(`/api/job/${JOB_ID}/open-folder/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+      });
+      const data = await resp.json();
+
+      if (resp.ok) {
+        feedback.textContent = '✓ Opened: ' + data.folder;
+        feedback.className = 'open-folder-feedback feedback-ok';
+      } else {
+        feedback.textContent = '⚠ ' + (data.error || 'Could not open folder.');
+        feedback.className = 'open-folder-feedback feedback-err';
+      }
+    } catch (e) {
+      feedback.textContent = '⚠ Request failed: ' + e.message;
+      feedback.className = 'open-folder-feedback feedback-err';
+    } finally {
+      btn.disabled = false;
+      spinner.classList.add('hidden');
+      feedback.classList.remove('hidden');
+    }
+  }
+</script>
+{% endblock %}

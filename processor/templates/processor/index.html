@@ -1,0 +1,178 @@
+{% extends "processor/base.html" %}
+{% block title %}OCR Document Processor — New Job{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-badge">Bangla &amp; English OCR</div>
+  <h1 class="hero-title">Scanned Document<br /><span class="gradient-text">Clean &amp; OCR</span></h1>
+  <p class="hero-subtitle">
+    Select a folder of scanned images. The processor will clean, deskew, and extract text,
+    producing searchable PDFs and plain-text files automatically.
+  </p>
+</section>
+
+<div class="card form-card">
+  <div class="card-header">
+    <span class="card-icon">📁</span>
+    <h2 class="card-title">Configure Processing Job</h2>
+  </div>
+
+  <form id="process-form" method="post" action="{% url 'process' %}" novalidate>
+    {% csrf_token %}
+
+    <div class="form-group {% if form.source_folder.errors %}has-error{% endif %}">
+      <label class="form-label" for="{{ form.source_folder.id_for_label }}">
+        {{ form.source_folder.label }}
+        <span class="required-star">*</span>
+      </label>
+      <div class="input-wrapper input-with-browse">
+        <span class="input-icon">🗂️</span>
+        {{ form.source_folder }}
+        <button type="button" id="btn-browse-source" class="btn-browse" title="Open folder picker">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="15" height="15">
+            <path d="M2 4.75A.75.75 0 012.75 4h5.19l1.5 1.5H17.25a.75.75 0 010 1.5H2.75A.75.75 0 012 6.25V4.75zM2 9.25A.75.75 0 012.75 9h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 9.25zM2.75 14a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75z"/>
+          </svg>
+          Browse…
+        </button>
+      </div>
+      {% if form.source_folder.help_text %}
+        <p class="form-help">{{ form.source_folder.help_text }}</p>
+      {% endif %}
+      {% for error in form.source_folder.errors %}
+        <p class="form-error">⚠ {{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="form-group {% if form.output_folder.errors %}has-error{% endif %}">
+      <label class="form-label" for="{{ form.output_folder.id_for_label }}">
+        {{ form.output_folder.label }}
+      </label>
+      <div class="input-wrapper">
+        <span class="input-icon">💾</span>
+        {{ form.output_folder }}
+      </div>
+      {% if form.output_folder.help_text %}
+        <p class="form-help">{{ form.output_folder.help_text }}</p>
+      {% endif %}
+      {% for error in form.output_folder.errors %}
+        <p class="form-error">⚠ {{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="info-box">
+      <div class="info-icon">ℹ️</div>
+      <div class="info-text">
+        <strong>Supported formats:</strong> .jpg, .jpeg, .png<br />
+        <strong>Languages:</strong> English + Bengali (বাংলা)<br />
+        <strong>Output:</strong> Cleaned images, searchable PDFs, and .txt files
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" id="btn-ok" class="btn btn-primary">
+        <span class="btn-icon">▶</span>
+        <span class="btn-label">OK — Start Processing</span>
+        <span class="btn-spinner hidden" id="btn-spinner">
+          <svg class="spin" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.3"/>
+            <path d="M12 2a10 10 0 0 1 10 10"/>
+          </svg>
+        </span>
+      </button>
+      <button type="button" id="btn-cancel" class="btn btn-secondary" onclick="handleCancel()">
+        <span class="btn-icon">✕</span>
+        <span class="btn-label">Cancel</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<style>
+  .input-with-browse {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .input-with-browse input {
+    flex: 1;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+  .btn-browse {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    height: 44px;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: #fff;
+    border: none;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.2s, transform 0.1s;
+    flex-shrink: 0;
+  }
+  .btn-browse:hover {
+    opacity: 0.88;
+  }
+  .btn-browse:active {
+    transform: scale(0.97);
+  }
+  .btn-browse:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-browse svg {
+    flex-shrink: 0;
+  }
+</style>
+
+<script>
+  const form = document.getElementById('process-form');
+  const btnOk = document.getElementById('btn-ok');
+  const spinner = document.getElementById('btn-spinner');
+  const btnBrowse = document.getElementById('btn-browse-source');
+  const sourceInput = document.getElementById('source_folder');
+
+  form.addEventListener('submit', () => {
+    btnOk.disabled = true;
+    btnOk.querySelector('.btn-icon').style.display = 'none';
+    spinner.classList.remove('hidden');
+    btnOk.querySelector('.btn-label').textContent = 'Starting…';
+  });
+
+  function handleCancel() {
+    form.reset();
+    const cancelBtn = document.getElementById('btn-cancel');
+    cancelBtn.classList.add('btn-flash');
+    setTimeout(() => cancelBtn.classList.remove('btn-flash'), 600);
+  }
+
+  // Browse button: calls the server-side tkinter folder dialog
+  btnBrowse.addEventListener('click', async () => {
+    btnBrowse.disabled = true;
+    const originalText = btnBrowse.innerHTML;
+    btnBrowse.innerHTML = '<svg class="spin" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10"/></svg> Opening…';
+
+    try {
+      const current = sourceInput.value.trim();
+      const params = current ? '?initial=' + encodeURIComponent(current) : '';
+      const res = await fetch('{% url "browse_folder" %}' + params);
+      if (!res.ok) throw new Error('Server error ' + res.status);
+      const data = await res.json();
+      if (!data.cancelled && data.folder) {
+        sourceInput.value = data.folder;
+        sourceInput.dispatchEvent(new Event('input'));
+      }
+    } catch (err) {
+      alert('Could not open folder dialog:\n' + err.message);
+    } finally {
+      btnBrowse.disabled = false;
+      btnBrowse.innerHTML = originalText;
+    }
+  });
+</script>
+{% endblock %}
